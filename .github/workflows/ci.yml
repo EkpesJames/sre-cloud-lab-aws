@@ -137,7 +137,8 @@ jobs:
     name: Deploy to k3s
     runs-on: self-hosted
     needs: build
-    if: github.ref == 'refs/heads/main' && github.event_name == 'push'
+    if: false
+    # if: github.ref == 'refs/heads/main' && github.event_name == 'push'
 
     steps:
       - name: Checkout code
