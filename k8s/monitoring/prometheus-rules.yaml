@@ -1,0 +1,161 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: cloud-lab-rules
+  namespace: monitoring
+  labels:
+    # These labels tell the Prometheus operator to load this rule file
+    app: kube-prometheus-stack
+    release: kube-prometheus
+spec:
+  groups:
+
+    # ── SLI Recording Rules ─────────────────────────────────────────────────
+    - name: slo_recording_rules
+      interval: 30s
+      rules:
+        - record: slo:success_rate_5m
+          expr: |
+            sum(rate(http_requests_total{status="success"}[5m])) without(instance,pod)
+            /
+            sum(rate(http_requests_total[5m])) without(instance,pod)
+
+        - record: slo:success_rate_1h
+          expr: |
+            sum(rate(http_requests_total{status="success"}[1h])) without(instance,pod)
+            /
+            sum(rate(http_requests_total[1h])) without(instance,pod)
+
+        - record: slo:success_rate_6h
+          expr: |
+            sum(rate(http_requests_total{status="success"}[6h])) without(instance,pod)
+            /
+            sum(rate(http_requests_total[6h])) without(instance,pod)
+
+        - record: slo:error_rate_5m
+          expr: |
+            sum(rate(http_requests_total{status="error"}[5m])) without(instance,pod)
+            /
+            sum(rate(http_requests_total[5m])) without(instance,pod)
+
+        - record: slo:latency_p50_5m
+          expr: |
+            histogram_quantile(0.50,
+              sum(rate(http_request_duration_seconds_bucket[5m])) without(instance,pod)
+            )
+
+        - record: slo:latency_p95_5m
+          expr: |
+            histogram_quantile(0.95,
+              sum(rate(http_request_duration_seconds_bucket[5m])) without(instance,pod)
+            )
+
+        - record: slo:latency_p99_5m
+          expr: |
+            histogram_quantile(0.99,
+              sum(rate(http_request_duration_seconds_bucket[5m])) without(instance,pod)
+            )
+
+        - record: slo:request_rate_5m
+          expr: |
+            sum(rate(http_requests_total[5m])) without(instance,pod)
+
+    # ── Error Budget Rules ──────────────────────────────────────────────────
+    - name: error_budget_rules
+      interval: 30s
+      rules:
+        - record: slo:error_budget_remaining
+          expr: |
+            1 - ((1 - slo:success_rate_1h) / (1 - 0.99))
+
+        - record: slo:error_budget_burn_rate_1h
+          expr: |
+            (1 - slo:success_rate_1h) / (1 - 0.99)
+
+        - record: slo:error_budget_burn_rate_6h
+          expr: |
+            (1 - slo:success_rate_6h) / (1 - 0.99)
+
+        - record: slo:error_budget_consumed_ratio
+          expr: |
+            clamp_max(1 - slo:error_budget_remaining, 1)
+
+    # ── Alert Rules ─────────────────────────────────────────────────────────
+    - name: cloud-lab-alerts
+      rules:
+        - alert: AppDown
+          expr: up{service="cloud-lab-api"} == 0
+          for: 10s
+          labels:
+            severity: critical
+            team: platform
+          annotations:
+            summary: "Cloud Lab app is unreachable"
+            description: "Pod {{ $labels.pod }} has been down for more than 10 seconds."
+            runbook: "https://github.com/your-org/cloud-sre-lab/blob/main/runbooks/AppDown.md"
+
+        - alert: HighLatencyWarning
+          expr: slo:latency_p95_5m > 0.5
+          for: 1m
+          labels:
+            severity: warning
+            team: platform
+          annotations:
+            summary: "p95 latency above 500ms"
+            description: "95th percentile latency is {{ $value | humanizeDuration }}."
+            runbook: "https://github.com/your-org/cloud-sre-lab/blob/main/runbooks/HighLatency.md"
+
+        - alert: HighLatencyCritical
+          expr: slo:latency_p95_5m > 1.0
+          for: 2m
+          labels:
+            severity: critical
+            team: platform
+          annotations:
+            summary: "p95 latency above 1s — SLO breach imminent"
+            description: "95th percentile latency is {{ $value | humanizeDuration }}."
+            runbook: "https://github.com/your-org/cloud-sre-lab/blob/main/runbooks/HighLatency.md"
+
+        - alert: HighErrorRateWarning
+          expr: slo:error_rate_5m > 0.05
+          for: 1m
+          labels:
+            severity: warning
+            team: platform
+          annotations:
+            summary: "Error rate above 5%"
+            description: "Current error rate is {{ $value | humanizePercentage }}."
+            runbook: "https://github.com/your-org/cloud-sre-lab/blob/main/runbooks/HighErrorRate.md"
+
+        - alert: HighErrorRateCritical
+          expr: slo:error_rate_5m > 0.10
+          for: 2m
+          labels:
+            severity: critical
+            team: platform
+          annotations:
+            summary: "Error rate above 10% — SLO breach"
+            description: "Current error rate is {{ $value | humanizePercentage }}."
+            runbook: "https://github.com/your-org/cloud-sre-lab/blob/main/runbooks/HighErrorRate.md"
+
+        - alert: ErrorBudgetBurnRateFast
+          expr: slo:error_budget_burn_rate_1h > 14.4
+          for: 2m
+          labels:
+            severity: critical
+            team: platform
+          annotations:
+            summary: "Error budget burning too fast (1h window)"
+            description: "Burn rate is {{ $value | humanize }}x. Budget exhausted in under 2 hours."
+            runbook: "https://github.com/your-org/cloud-sre-lab/blob/main/runbooks/ErrorBudget.md"
+
+        - alert: ErrorBudgetBurnRateSlow
+          expr: slo:error_budget_burn_rate_6h > 6
+          for: 15m
+          labels:
+            severity: warning
+            team: platform
+          annotations:
+            summary: "Error budget elevated burn rate (6h window)"
+            description: "Burn rate is {{ $value | humanize }}x over 6 hours."
+            runbook: "https://github.com/your-org/cloud-sre-lab/blob/main/runbooks/ErrorBudget.md"

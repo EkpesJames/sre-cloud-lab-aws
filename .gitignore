@@ -1,0 +1,25 @@
+# ── Secrets — never commit these ─────────────────────────────────────────────
+.env
+*.env.local
+
+# ── Grafana state (auto-generated) ───────────────────────────────────────────
+grafana/data/
+
+# ── OS / editor noise ─────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+.vscode/
+*.swp
+*~
+
+# ── Python ────────────────────────────────────────────────────────────────────
+__pycache__/
+*.pyc
+*.pyo
+.pytest_cache/
+
+# ── Docker build cache ────────────────────────────────────────────────────────
+*.log
+venv/
+__pycache__/
+*.pyc

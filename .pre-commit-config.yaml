@@ -1,0 +1,30 @@
+repos:
+  # Python linting with ruff — fast, modern flake8 replacement
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.4.4
+    hooks:
+      - id: ruff
+        args: [--select, "E,F,W", --ignore, "E501"]
+        files: ^app/
+
+  # YAML linting — catches syntax errors in K8s manifests
+  - repo: https://github.com/adrienverge/yamllint
+    rev: v1.35.1
+    hooks:
+      - id: yamllint
+        args: [-d, "{extends: relaxed, rules: {line-length: {max: 150}}}"]
+        files: \.(yaml|yml)$
+        exclude: ^grafana/dashboards/
+
+  # Trailing whitespace and file hygiene
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v4.6.0
+    hooks:
+      - id: trailing-whitespace
+      - id: end-of-file-fixer
+      - id: check-yaml
+        args: ['--allow-multiple-documents']
+        exclude: ^grafana/dashboards/
+      - id: check-added-large-files
+        args: [--maxkb=500]
+      - id: detect-private-key   # catches accidentally committed secrets

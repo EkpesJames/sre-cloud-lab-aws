@@ -1,0 +1,176 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# kube-prometheus-stack values — WSL2 compatible
+# Updated for distributed booking system — per-service scrape jobs
+# ─────────────────────────────────────────────────────────────────────────────
+
+grafana:
+  enabled: true
+  adminPassword: "admin"
+
+  service:
+    type: NodePort
+    nodePort: 32000
+
+  additionalDataSources:
+    - name: Loki
+      type: loki
+      url: http://loki:3100
+      access: proxy
+      isDefault: false
+
+  dashboardProviders:
+    dashboardproviders.yaml:
+      apiVersion: 1
+      providers:
+        - name: cloud-lab
+          orgId: 1
+          folder: "Cloud Lab"
+          type: file
+          disableDeletion: false
+          updateIntervalSeconds: 30
+          options:
+            path: /var/lib/grafana/dashboards/cloud-lab
+
+  dashboardsConfigMaps:
+    cloud-lab: "grafana-dashboards"
+
+  grafana.ini:
+    server:
+      root_url: "http://localhost:32000"
+
+  sidecar:
+    datasources:
+      enabled: false
+
+prometheus:
+  enabled: true
+
+  service:
+    type: NodePort
+    nodePort: 32090
+
+  prometheusSpec:
+    scrapeInterval: "15s"
+    evaluationInterval: "15s"
+
+    serviceMonitorSelectorNilUsesHelmValues: false
+    podMonitorSelectorNilUsesHelmValues: false
+    ruleSelectorNilUsesHelmValues: false
+
+    additionalScrapeConfigs:
+
+      # ── API Gateway ───────────────────────────────────────────────────────
+      - job_name: "api-gateway"
+        scrape_interval: "5s"
+        metrics_path: /metrics
+        kubernetes_sd_configs:
+          - role: pod
+            namespaces:
+              names:
+                - app
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_label_app]
+            action: keep
+            regex: "cloud-lab"
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+            action: keep
+            regex: "true"
+          - source_labels: [__meta_kubernetes_pod_ip]
+            action: replace
+            replacement: $1:80
+            target_label: __address__
+          - source_labels: [__meta_kubernetes_pod_name]
+            target_label: pod
+          - source_labels: [__meta_kubernetes_namespace]
+            target_label: namespace
+          - target_label: service
+            replacement: api-gateway
+
+      # ── Booking Service ───────────────────────────────────────────────────
+      - job_name: "booking-service"
+        scrape_interval: "5s"
+        metrics_path: /metrics
+        kubernetes_sd_configs:
+          - role: pod
+            namespaces:
+              names:
+                - app
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_label_app]
+            action: keep
+            regex: "booking-service"
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+            action: keep
+            regex: "true"
+          - source_labels: [__meta_kubernetes_pod_ip]
+            action: replace
+            replacement: $1:80
+            target_label: __address__
+          - source_labels: [__meta_kubernetes_pod_name]
+            target_label: pod
+          - source_labels: [__meta_kubernetes_namespace]
+            target_label: namespace
+          - target_label: service
+            replacement: booking-service
+
+      # ── Payment Service ───────────────────────────────────────────────────
+      - job_name: "payment-service"
+        scrape_interval: "5s"
+        metrics_path: /metrics
+        kubernetes_sd_configs:
+          - role: pod
+            namespaces:
+              names:
+                - app
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_label_app]
+            action: keep
+            regex: "payment-service"
+          - source_labels: [__meta_kubernetes_pod_annotation_prometheus_io_scrape]
+            action: keep
+            regex: "true"
+          - source_labels: [__meta_kubernetes_pod_ip]
+            action: replace
+            replacement: $1:80
+            target_label: __address__
+          - source_labels: [__meta_kubernetes_pod_name]
+            target_label: pod
+          - source_labels: [__meta_kubernetes_namespace]
+            target_label: namespace
+          - target_label: service
+            replacement: payment-service
+
+alertmanager:
+  enabled: true
+
+  service:
+    type: NodePort
+    nodePort: 32093
+
+  alertmanagerSpec:
+    useExistingSecret: true
+    configSecret: alertmanager-config
+
+kubeStateMetrics:
+  enabled: true
+
+nodeExporter:
+  enabled: false
+
+kubeApiServer:
+  enabled: true
+
+kubelet:
+  enabled: true
+
+kubeControllerManager:
+  enabled: false
+
+kubeScheduler:
+  enabled: false
+
+kubeProxy:
+  enabled: false
+
+kubeEtcd:
+  enabled: false

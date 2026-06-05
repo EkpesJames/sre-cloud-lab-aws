@@ -1,0 +1,39 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# chaos/network-delay.yaml
+# Injects 200ms network latency on all cloud-lab pods for 5 minutes
+#
+# What to observe:
+#   - p95 latency climbs above 500ms SLO threshold
+#   - HighLatencyWarning alert fires after 1 minute
+#   - HighLatencyCritical fires if latency exceeds 1000ms
+#   - Grafana: latency percentile panel shows all lines climbing
+#   - Jaeger: traces show increased span durations
+#   - Circuit breaker may trip if latency causes timeouts
+#
+# Apply:  kubectl apply -f chaos/network-delay.yaml
+# Stop:   kubectl delete -f chaos/network-delay.yaml
+# Status: kubectl get networkchaos -n app
+# ─────────────────────────────────────────────────────────────────────────────
+
+apiVersion: chaos-mesh.org/v1alpha1
+kind: NetworkChaos
+metadata:
+  name: cloud-lab-network-delay
+  namespace: app
+  labels:
+    scenario: network-delay
+    week: "5"
+spec:
+  action: delay
+  mode: all              # apply to all cloud-lab pods
+  selector:
+    namespaces:
+      - app
+    labelSelectors:
+      app: cloud-lab
+  delay:
+    latency: "200ms"     # add 200ms to every network call
+    correlation: "25"    # 25% correlation between packets
+    jitter: "50ms"       # ±50ms jitter for realism
+  direction: to          # delay inbound traffic
+  duration: "5m"         # run for 5 minutes then stop automatically

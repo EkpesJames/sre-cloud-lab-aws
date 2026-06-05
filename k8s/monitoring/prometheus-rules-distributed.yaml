@@ -1,0 +1,206 @@
+apiVersion: monitoring.coreos.com/v1
+kind: PrometheusRule
+metadata:
+  name: distributed-system-rules
+  namespace: monitoring
+  labels:
+    app: kube-prometheus-stack
+    release: kube-prometheus
+spec:
+  groups:
+
+    # ── API Gateway SLI Recording Rules ──────────────────────────────────────
+    - name: api_gateway_slo_rules
+      interval: 30s
+      rules:
+        - record: slo:api_gateway:success_rate_5m
+          expr: |
+            sum(rate(http_requests_total{job="api-gateway",status="success"}[5m]))
+            /
+            sum(rate(http_requests_total{job="api-gateway"}[5m]))
+
+        - record: slo:api_gateway:success_rate_1h
+          expr: |
+            sum(rate(http_requests_total{job="api-gateway",status="success"}[1h]))
+            /
+            sum(rate(http_requests_total{job="api-gateway"}[1h]))
+
+        - record: slo:api_gateway:latency_p95_5m
+          expr: |
+            histogram_quantile(0.95,
+              sum(rate(http_request_duration_seconds_bucket{job="api-gateway"}[5m]))
+              without(instance,pod)
+            )
+
+        - record: slo:api_gateway:error_budget_burn_rate_1h
+          expr: |
+            (1 - slo:api_gateway:success_rate_1h) / (1 - 0.99)
+
+        - record: slo:api_gateway:request_rate_5m
+          expr: |
+            sum(rate(http_requests_total{job="api-gateway"}[5m]))
+
+    # ── Booking Service SLI Recording Rules ───────────────────────────────────
+    - name: booking_service_slo_rules
+      interval: 30s
+      rules:
+        - record: slo:booking_service:success_rate_5m
+          expr: |
+            sum(rate(http_requests_total{job="booking-service",status="success"}[5m]))
+            /
+            sum(rate(http_requests_total{job="booking-service"}[5m]))
+
+        - record: slo:booking_service:success_rate_1h
+          expr: |
+            sum(rate(http_requests_total{job="booking-service",status="success"}[1h]))
+            /
+            sum(rate(http_requests_total{job="booking-service"}[1h]))
+
+        - record: slo:booking_service:latency_p95_5m
+          expr: |
+            histogram_quantile(0.95,
+              sum(rate(http_request_duration_seconds_bucket{job="booking-service"}[5m]))
+              without(instance,pod)
+            )
+
+        - record: slo:booking_service:error_budget_burn_rate_1h
+          expr: |
+            (1 - slo:booking_service:success_rate_1h) / (1 - 0.995)
+
+        - record: slo:booking_service:request_rate_5m
+          expr: |
+            sum(rate(http_requests_total{job="booking-service"}[5m]))
+
+        - record: slo:booking_service:bookings_per_minute
+          expr: |
+            sum(rate(bookings_created_total{status="confirmed"}[5m])) * 60
+
+    # ── Payment Service SLI Recording Rules ───────────────────────────────────
+    - name: payment_service_slo_rules
+      interval: 30s
+      rules:
+        - record: slo:payment_service:success_rate_5m
+          expr: |
+            sum(rate(http_requests_total{job="payment-service",status="success"}[5m]))
+            /
+            sum(rate(http_requests_total{job="payment-service"}[5m]))
+
+        - record: slo:payment_service:success_rate_1h
+          expr: |
+            sum(rate(http_requests_total{job="payment-service",status="success"}[1h]))
+            /
+            sum(rate(http_requests_total{job="payment-service"}[1h]))
+
+        - record: slo:payment_service:latency_p95_5m
+          expr: |
+            histogram_quantile(0.95,
+              sum(rate(http_request_duration_seconds_bucket{job="payment-service"}[5m]))
+              without(instance,pod)
+            )
+
+        - record: slo:payment_service:error_budget_burn_rate_1h
+          expr: |
+            (1 - slo:payment_service:success_rate_1h) / (1 - 0.999)
+
+        - record: slo:payment_service:payments_per_minute
+          expr: |
+            sum(rate(payments_processed_total{status="success"}[5m])) * 60
+
+        - record: slo:payment_service:revenue_per_minute
+          expr: |
+            sum(rate(payment_amount_pounds_sum[5m])) * 60
+
+    # ── Per-service Alert Rules ───────────────────────────────────────────────
+    - name: distributed_system_alerts
+      rules:
+
+        # API Gateway alerts (SLO: 99%)
+        - alert: APIGatewayHighErrorRate
+          expr: slo:api_gateway:error_budget_burn_rate_1h > 14.4
+          for: 2m
+          labels:
+            severity: critical
+            service: api-gateway
+            team: platform
+          annotations:
+            summary: "API Gateway error budget burning fast"
+            description: "Burn rate {{ $value | humanize }}x. Budget exhausted in < 2h."
+            runbook: "https://github.com/EkpesJames/sre-cloud-lab/blob/main/runbooks/AppDown.md"
+
+        # Booking Service alerts (SLO: 99.5%)
+        - alert: BookingServiceHighErrorRate
+          expr: |
+            sum(rate(http_requests_total{job="booking-service",status="error"}[5m]))
+            /
+            sum(rate(http_requests_total{job="booking-service"}[5m])) > 0.05
+          for: 1m
+          labels:
+            severity: warning
+            service: booking-service
+            team: platform
+          annotations:
+            summary: "Booking service error rate above 5%"
+            description: "Current error rate {{ $value | humanizePercentage }}. SLO allows 0.5%."
+
+        - alert: BookingServiceDown
+          expr: up{job="booking-service"} == 0
+          for: 10s
+          labels:
+            severity: critical
+            service: booking-service
+            team: platform
+          annotations:
+            summary: "Booking service is unreachable"
+            description: "Pod {{ $labels.pod }} has been down for more than 10s."
+
+        # Payment Service alerts (SLO: 99.9% — strictest)
+        - alert: PaymentServiceHighErrorRate
+          expr: |
+            sum(rate(http_requests_total{job="payment-service",status="error"}[5m]))
+            /
+            sum(rate(http_requests_total{job="payment-service"}[5m])) > 0.01
+          for: 1m
+          labels:
+            severity: critical
+            service: payment-service
+            team: platform
+          annotations:
+            summary: "Payment service error rate above 1% — SLO breach"
+            description: "Current error rate {{ $value | humanizePercentage }}. SLO allows 0.1%."
+
+        - alert: PaymentServiceDown
+          expr: up{job="payment-service"} == 0
+          for: 10s
+          labels:
+            severity: critical
+            service: payment-service
+            team: platform
+          annotations:
+            summary: "Payment service is unreachable — revenue impact"
+            description: "Pod {{ $labels.pod }} has been down for more than 10s."
+
+        - alert: PaymentServiceHighLatency
+          expr: slo:payment_service:latency_p95_5m > 0.2
+          for: 1m
+          labels:
+            severity: warning
+            service: payment-service
+            team: platform
+          annotations:
+            summary: "Payment service p95 latency above 200ms"
+            description: "p95 latency is {{ $value | humanizeDuration }}. SLO target is 200ms."
+
+        # Cross-service cascade detection
+        - alert: CascadeFailureDetected
+          expr: |
+            (slo:api_gateway:error_budget_burn_rate_1h > 6)
+            and
+            (slo:booking_service:error_budget_burn_rate_1h > 6)
+          for: 2m
+          labels:
+            severity: critical
+            service: system
+            team: platform
+          annotations:
+            summary: "Cascade failure — both API Gateway and Booking Service degraded"
+            description: "Multiple services degrading simultaneously. Check Payment Service first."

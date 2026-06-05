@@ -1,0 +1,15 @@
+apiVersion: v1
+kind: ConfigMap
+metadata:
+  name: cloud-lab-config
+  namespace: app
+data:
+  APP_ERROR_RATE: "0.30"
+  APP_LATENCY_SECONDS: "0.2"
+  JAEGER_ENDPOINT: "http://jaeger.monitoring.svc.cluster.local:4317"
+  BOOKING_SERVICE_URL: "http://booking-service:80"
+  CIRCUIT_THRESHOLD: "0.50"
+  CIRCUIT_TIMEOUT: "30"
+  SMTP_HOST: "smtp.mail.yahoo.com"
+  SMTP_PORT: "587"
+  SLACK_CHANNEL: "#general"

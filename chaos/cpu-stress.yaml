@@ -1,0 +1,37 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# chaos/cpu-stress.yaml
+# Stresses CPU on one cloud-lab pod for 3 minutes
+#
+# What to observe:
+#   - kubectl top pods -n app shows CPU spike on affected pod
+#   - HPA detects elevated CPU and may scale up replicas
+#   - Request latency increases on the stressed pod
+#   - Prometheus: container_cpu_usage_seconds_total spikes
+#   - Grafana: if CPU dashboard exists, shows spike
+#   - Other pods continue serving normally (load balancer routes around it)
+#
+# Apply:  kubectl apply -f chaos/cpu-stress.yaml
+# Stop:   kubectl delete -f chaos/cpu-stress.yaml
+# Status: kubectl get stresschaos -n app
+# ─────────────────────────────────────────────────────────────────────────────
+
+apiVersion: chaos-mesh.org/v1alpha1
+kind: StressChaos
+metadata:
+  name: cloud-lab-cpu-stress
+  namespace: app
+  labels:
+    scenario: cpu-stress
+    week: "5"
+spec:
+  mode: one              # stress one pod at a time
+  selector:
+    namespaces:
+      - app
+    labelSelectors:
+      app: cloud-lab
+  stressors:
+    cpu:
+      workers: 2         # 2 CPU stress workers
+      load: 80           # 80% CPU load
+  duration: "3m"         # run for 3 minutes then stop automatically

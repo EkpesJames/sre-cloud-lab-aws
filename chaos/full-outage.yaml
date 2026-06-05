@@ -1,0 +1,39 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# chaos/full-outage.yaml
+# Kills ALL cloud-lab pods simultaneously — simulates a complete outage
+#
+# What to observe:
+#   - AppDown alert fires within 10-15 seconds
+#   - Slack critical notification arrives
+#   - Kubernetes immediately starts replacement pods
+#   - Service recovers automatically within 30-60 seconds
+#   - Error budget consumed rapidly during outage window
+#   - Grafana: availability drops to 0, then recovers
+#   - Alertmanager: AppDown resolves after recovery
+#
+# WARNING: This will cause a real outage for 30-60 seconds
+# Use this specifically to test the full alert → notify → recover cycle
+#
+# Apply:  kubectl apply -f chaos/full-outage.yaml
+# Stop:   kubectl delete -f chaos/full-outage.yaml
+# Status: kubectl get podchaos -n app
+# ─────────────────────────────────────────────────────────────────────────────
+
+apiVersion: chaos-mesh.org/v1alpha1
+kind: PodChaos
+metadata:
+  name: cloud-lab-full-outage
+  namespace: app
+  labels:
+    scenario: full-outage
+    week: "5"
+spec:
+  action: pod-kill
+  mode: all              # kill ALL pods simultaneously
+  selector:
+    namespaces:
+      - app
+    labelSelectors:
+      app: cloud-lab
+  # No scheduler — runs once immediately when applied
+  # Delete the resource to stop

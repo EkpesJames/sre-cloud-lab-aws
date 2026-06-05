@@ -1,0 +1,13 @@
+apiVersion: policy/v1
+kind: PodDisruptionBudget
+metadata:
+  name: cloud-lab-pdb
+  namespace: app
+spec:
+  # At least 2 pods must be available at all times
+  # Prevents node drains or rolling updates from taking all 3 down at once
+  minAvailable: 2
+  selector:
+    matchLabels:
+      app: cloud-lab
+

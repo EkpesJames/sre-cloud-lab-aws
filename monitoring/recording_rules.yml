@@ -1,0 +1,97 @@
+groups:
+
+  # ── Raw SLI Recording Rules ───────────────────────────────────────────────────
+  # All rules use sum() without(instance) to aggregate across all 3 app instances
+  # into a single service-level number. Without this, Grafana renders one stat
+  # panel per instance instead of one combined reading.
+
+  - name: slo_recording_rules
+    interval: 30s
+    rules:
+
+      # Success rate over 5m — aggregated across all instances
+      - record: slo:success_rate_5m
+        expr: |
+          sum(rate(http_requests_total{status="success"}[5m])) without(instance)
+          /
+          sum(rate(http_requests_total[5m])) without(instance)
+
+      # Success rate over 1h — used by error budget burn rate calculation
+      - record: slo:success_rate_1h
+        expr: |
+          sum(rate(http_requests_total{status="success"}[1h])) without(instance)
+          /
+          sum(rate(http_requests_total[1h])) without(instance)
+
+      # Success rate over 6h — used by slow burn rate alert
+      - record: slo:success_rate_6h
+        expr: |
+          sum(rate(http_requests_total{status="success"}[6h])) without(instance)
+          /
+          sum(rate(http_requests_total[6h])) without(instance)
+
+      # Error rate over 5m — aggregated across all instances
+      - record: slo:error_rate_5m
+        expr: |
+          sum(rate(http_requests_total{status="error"}[5m])) without(instance)
+          /
+          sum(rate(http_requests_total[5m])) without(instance)
+
+      # p50 latency — histogram_quantile needs sum(rate()) over the bucket
+      - record: slo:latency_p50_5m
+        expr: |
+          histogram_quantile(0.50,
+            sum(rate(http_request_duration_seconds_bucket[5m])) without(instance)
+          )
+
+      # p95 latency — SLO target is <500ms
+      - record: slo:latency_p95_5m
+        expr: |
+          histogram_quantile(0.95,
+            sum(rate(http_request_duration_seconds_bucket[5m])) without(instance)
+          )
+
+      # p99 latency
+      - record: slo:latency_p99_5m
+        expr: |
+          histogram_quantile(0.99,
+            sum(rate(http_request_duration_seconds_bucket[5m])) without(instance)
+          )
+
+      # Total request throughput across all instances (requests per second)
+      - record: slo:request_rate_5m
+        expr: |
+          sum(rate(http_requests_total[5m])) without(instance)
+
+  # ── Error Budget Recording Rules ──────────────────────────────────────────────
+  # SLO target: 99% availability (1% error budget)
+  # These build on the aggregated SLI rules above
+
+  - name: error_budget_rules
+    interval: 30s
+    rules:
+
+      # Remaining error budget as a ratio
+      # 1.0 = full budget remaining, 0.0 = exhausted, negative = over budget
+      - record: slo:error_budget_remaining
+        expr: |
+          1 - (
+            (1 - slo:success_rate_1h) / (1 - 0.99)
+          )
+
+      # Burn rate over 1h window
+      # 1.0 = sustainable pace, 14.4 = budget exhausted in 2h, >14.4 = critical
+      - record: slo:error_budget_burn_rate_1h
+        expr: |
+          (1 - slo:success_rate_1h) / (1 - 0.99)
+
+      # Burn rate over 6h window — detects slower sustained degradation
+      - record: slo:error_budget_burn_rate_6h
+        expr: |
+          (1 - slo:success_rate_6h) / (1 - 0.99)
+
+      # Budget consumed ratio — capped at 1.0 (100%) for clean dashboard display
+      - record: slo:error_budget_consumed_ratio
+        expr: |
+          clamp_max(1 - slo:error_budget_remaining, 1)
+

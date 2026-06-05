@@ -1,0 +1,34 @@
+apiVersion: autoscaling/v2
+kind: HorizontalPodAutoscaler
+metadata:
+  name: cloud-lab-hpa
+  namespace: app
+spec:
+  scaleTargetRef:
+    apiVersion: apps/v1
+    kind: Deployment
+    name: cloud-lab
+  minReplicas: 2
+  maxReplicas: 6
+  metrics:
+    - type: Resource
+      resource:
+        name: cpu
+        target:
+          type: Utilization
+          # Scale up when average CPU across all pods exceeds 60%
+          averageUtilization: 60
+  behavior:
+    scaleUp:
+      stabilizationWindowSeconds: 30   # wait 30s before scaling up
+      policies:
+        - type: Pods
+          value: 2
+          periodSeconds: 30            # add max 2 pods per 30s
+    scaleDown:
+      stabilizationWindowSeconds: 120  # wait 2 minutes before scaling down
+      policies:
+        - type: Pods
+          value: 1
+          periodSeconds: 60            # remove max 1 pod per 60s
+

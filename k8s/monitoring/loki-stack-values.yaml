@@ -1,0 +1,108 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# Loki Stack values
+# Deploys: Loki (log store) + Promtail (log shipper DaemonSet)
+# ─────────────────────────────────────────────────────────────────────────────
+
+loki:
+  enabled: true
+
+  # Single binary mode — simplest for local lab
+  auth_enabled: false
+
+  storage:
+    type: filesystem
+
+  # Persist logs across pod restarts
+  persistence:
+    enabled: true
+    size: 5Gi
+
+  service:
+    type: ClusterIP
+    port: 3100
+
+  config:
+    schema_config:
+      configs:
+        - from: "2024-01-01"
+          store: boltdb-shipper
+          object_store: filesystem
+          schema: v11
+          index:
+            prefix: index_
+            period: 24h
+
+    storage_config:
+      boltdb_shipper:
+        active_index_directory: /data/loki/index
+        cache_location: /data/loki/index_cache
+        shared_store: filesystem
+      filesystem:
+        directory: /data/loki/chunks
+
+    limits_config:
+      enforce_metric_name: false
+      reject_old_samples: true
+      reject_old_samples_max_age: 168h
+      # Allow ingestion from all tenants
+      ingestion_rate_mb: 16
+      ingestion_burst_size_mb: 32
+
+    chunk_store_config:
+      max_look_back_period: 0s
+
+    table_manager:
+      retention_deletes_enabled: false
+      retention_period: 0s
+
+# ── Promtail ──────────────────────────────────────────────────────────────────
+# Runs as a DaemonSet — one instance per node, tails all container logs
+promtail:
+  enabled: true
+
+  config:
+    # Ship logs to Loki
+    clients:
+      - url: http://loki:3100/loki/api/v1/push
+
+    scrape_configs:
+      - job_name: kubernetes-pods
+        pipeline_stages:
+          # Parse JSON logs from your FastAPI app
+          - json:
+              expressions:
+                timestamp: timestamp
+                level: level
+                message: message
+                logger: logger
+          - labels:
+              level:
+              logger:
+          - timestamp:
+              source: timestamp
+              format: "2006-01-02 15:04:05,000"
+
+        kubernetes_sd_configs:
+          - role: pod
+
+        relabel_configs:
+          - source_labels: [__meta_kubernetes_pod_node_name]
+            target_label: __host__
+          - action: labelmap
+            regex: __meta_kubernetes_pod_label_(.+)
+          - source_labels: [__meta_kubernetes_namespace]
+            target_label: namespace
+          - source_labels: [__meta_kubernetes_pod_name]
+            target_label: pod
+          - source_labels: [__meta_kubernetes_container_name]
+            target_label: container
+          - replacement: /var/log/pods/*$1/*.log
+            separator: /
+            source_labels:
+              - __meta_kubernetes_pod_uid
+              - __meta_kubernetes_pod_container_name
+            target_label: __path__
+
+# Grafana is deployed via kube-prometheus-stack — disable here
+grafana:
+  enabled: false

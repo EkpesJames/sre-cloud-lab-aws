@@ -1,0 +1,11 @@
+fastapi
+uvicorn
+prometheus-client
+httpx
+tenacity
+opentelemetry-sdk
+opentelemetry-api
+opentelemetry-instrumentation-fastapi
+opentelemetry-exporter-otlp-proto-grpc
+opentelemetry-instrumentation-logging
+opentelemetry-propagator-b3

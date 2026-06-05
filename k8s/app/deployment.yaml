@@ -1,0 +1,134 @@
+apiVersion: apps/v1
+kind: Deployment
+metadata:
+  name: cloud-lab
+  namespace: app
+  labels:
+    app: cloud-lab
+    version: "1.0.0"
+spec:
+  replicas: 3
+  selector:
+    matchLabels:
+      app: cloud-lab
+
+  # Rolling update strategy — replaces pods one at a time
+  # Never goes below 2 available pods during an update
+  strategy:
+    type: RollingUpdate
+    rollingUpdate:
+      maxUnavailable: 1
+      maxSurge: 1
+
+  template:
+    metadata:
+      labels:
+        app: cloud-lab
+        version: "1.0.0"
+      annotations:
+        prometheus.io/scrape: "true"
+        prometheus.io/port: "80"
+        prometheus.io/path: "/metrics"
+    spec:
+
+      # Security — run as non-root user
+      securityContext:
+        runAsNonRoot: true
+        runAsUser: 1000
+        runAsGroup: 1000
+
+      # Graceful shutdown — give in-flight requests 30s to complete
+      terminationGracePeriodSeconds: 30
+
+      containers:
+        - name: cloud-lab
+          image: api-gateway:local
+          # For now, build locally and use: cloud-lab:local
+          imagePullPolicy: IfNotPresent
+          ports:
+            - containerPort: 80
+              name: http
+
+          # ── Config from ConfigMap ─────────────────────────────────────────────
+          envFrom:
+            - configMapRef:
+                name: cloud-lab-config
+
+          # ── Credentials from Secret ───────────────────────────────────────────
+          env:
+            - name: SLACK_WEBHOOK_URL
+              valueFrom:
+                secretKeyRef:
+                  name: cloud-lab-secrets
+                  key: SLACK_WEBHOOK_URL
+            - name: SMTP_USERNAME
+              valueFrom:
+                secretKeyRef:
+                  name: cloud-lab-secrets
+                  key: SMTP_USERNAME
+            - name: SMTP_PASSWORD
+              valueFrom:
+                secretKeyRef:
+                  name: cloud-lab-secrets
+                  key: SMTP_PASSWORD
+
+          # ── Resource limits ───────────────────────────────────────────────────
+          # requests: guaranteed allocation on the node
+          # limits: hard ceiling — pod is killed if it exceeds memory limit
+          resources:
+            requests:
+              cpu: "100m"       # 0.1 CPU cores guaranteed
+              memory: "64Mi"    # 64MB RAM guaranteed
+            limits:
+              cpu: "200m"       # 0.2 CPU cores maximum
+              memory: "128Mi"   # 128MB RAM maximum
+
+          # ── Security hardening ────────────────────────────────────────────────
+          securityContext:
+            allowPrivilegeEscalation: false
+            readOnlyRootFilesystem: true
+            capabilities:
+              drop:
+                - ALL
+
+          # ── Liveness probe ────────────────────────────────────────────────────
+          # Is the process alive? Fails → container is restarted
+          livenessProbe:
+            httpGet:
+              path: /health/live
+              port: 80
+            initialDelaySeconds: 15
+            periodSeconds: 10
+            timeoutSeconds: 5
+            failureThreshold: 3
+
+          # ── Readiness probe ───────────────────────────────────────────────────
+          # Is the app ready to serve traffic? Fails → removed from Service endpoints
+          readinessProbe:
+            httpGet:
+              path: /health/ready
+              port: 80
+            initialDelaySeconds: 10
+            periodSeconds: 5
+            timeoutSeconds: 3
+            failureThreshold: 3
+
+          # ── Startup probe ─────────────────────────────────────────────────────
+          # Gives the app extra time to start before liveness kicks in
+          startupProbe:
+            httpGet:
+              path: /health/live
+              port: 80
+            initialDelaySeconds: 5
+            periodSeconds: 5
+            failureThreshold: 6    # 6 x 5s = 30s maximum startup time
+
+          # ── Writable tmp volume ───────────────────────────────────────────────
+          # readOnlyRootFilesystem requires an explicit writable mount for /tmp
+          volumeMounts:
+            - name: tmp
+              mountPath: /tmp
+
+      volumes:
+        - name: tmp
+          emptyDir: {}

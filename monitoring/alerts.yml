@@ -1,0 +1,94 @@
+groups:
+  - name: cloud-lab-alerts
+    rules:
+
+      # ── Availability ─────────────────────────────────────────────────────────
+
+      - alert: AppDown
+        expr: up{job="cloud-lab"} == 0
+        for: 10s
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "Cloud Lab app is unreachable"
+          description: "Instance {{ $labels.instance }} has been down for more than 10 seconds. Immediate investigation required."
+          runbook: "https://github.com/your-org/reliability-lab/blob/main/runbooks/AppDown.md"
+
+      # ── Latency ──────────────────────────────────────────────────────────────
+
+      - alert: HighLatencyWarning
+        expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) > 0.5
+        for: 1m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "p95 latency above 500ms"
+          description: "95th percentile latency is {{ $value | humanizeDuration }}. SLO threshold is 500ms."
+          runbook: "https://github.com/your-org/reliability-lab/blob/main/runbooks/HighLatency.md"
+
+      - alert: HighLatencyCritical
+        expr: histogram_quantile(0.95, rate(http_request_duration_seconds_bucket[5m])) > 1.0
+        for: 2m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "p95 latency above 1s — SLO breach imminent"
+          description: "95th percentile latency is {{ $value | humanizeDuration }}. Hard SLO threshold breached."
+          runbook: "https://github.com/your-org/reliability-lab/blob/main/runbooks/HighLatency.md"
+
+      # ── Error Rate ───────────────────────────────────────────────────────────
+
+      - alert: HighErrorRateWarning
+        expr: |
+          rate(http_requests_total{status="error"}[5m])
+          /
+          rate(http_requests_total[5m]) > 0.05
+        for: 1m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "Error rate above 5%"
+          description: "Current error rate is {{ $value | humanizePercentage }}. SLO allows max 1% errors."
+          runbook: "https://github.com/your-org/reliability-lab/blob/main/runbooks/HighErrorRate.md"
+
+      - alert: HighErrorRateCritical
+        expr: |
+          rate(http_requests_total{status="error"}[5m])
+          /
+          rate(http_requests_total[5m]) > 0.10
+        for: 2m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "Error rate above 10% — SLO breach"
+          description: "Current error rate is {{ $value | humanizePercentage }}. Immediate investigation required."
+          runbook: "https://github.com/your-org/reliability-lab/blob/main/runbooks/HighErrorRate.md"
+
+      # ── Error Budget ─────────────────────────────────────────────────────────
+
+      - alert: ErrorBudgetBurnRateFast
+        expr: slo:error_budget_burn_rate_1h > 14.4
+        for: 2m
+        labels:
+          severity: critical
+          team: platform
+        annotations:
+          summary: "Error budget burning too fast (1h window)"
+          description: "Burn rate is {{ $value | humanize }}x. At this rate the monthly error budget will be exhausted in under 2 hours."
+          runbook: "https://github.com/your-org/reliability-lab/blob/main/runbooks/ErrorBudget.md"
+
+      - alert: ErrorBudgetBurnRateSlow
+        expr: slo:error_budget_burn_rate_6h > 6
+        for: 15m
+        labels:
+          severity: warning
+          team: platform
+        annotations:
+          summary: "Error budget elevated burn rate (6h window)"
+          description: "Burn rate is {{ $value | humanize }}x over the last 6 hours. Monitor closely."
+          runbook: "https://github.com/your-org/reliability-lab/blob/main/runbooks/ErrorBudget.md"

@@ -1,0 +1,35 @@
+# ─────────────────────────────────────────────────────────────────────────────
+# chaos/pod-kill.yaml
+# Kills one random cloud-lab pod every 60 seconds
+#
+# What to observe:
+#   - Kubernetes immediately starts a replacement pod
+#   - HPA maintains minimum 2 replicas
+#   - PodDisruptionBudget ensures at least 2 pods always available
+#   - AppDown alert may fire briefly if both pods hit simultaneously
+#   - Prometheus: up{service="cloud-lab-api"} dips then recovers
+#   - Grafana: availability panel shows brief dip
+#   - Jaeger: traces show errors during pod kill window
+#
+# Apply:  kubectl apply -f chaos/pod-kill.yaml
+# Stop:   kubectl delete -f chaos/pod-kill.yaml
+# Status: kubectl get podchaos -n app
+# ─────────────────────────────────────────────────────────────────────────────
+
+apiVersion: chaos-mesh.org/v1alpha1
+kind: PodChaos
+metadata:
+  name: cloud-lab-pod-kill
+  namespace: app
+  labels:
+    scenario: pod-kill
+    week: "5"
+spec:
+  action: pod-kill
+  mode: one              # kill one pod at a time
+  selector:
+    namespaces:
+      - app
+    labelSelectors:
+      app: cloud-lab
+  duration: "30s"
